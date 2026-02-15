@@ -29,9 +29,9 @@
 %   3) Run this script. It will generate 3 figures as described above.
 %
 % USER-DEFINED PARAMETERS:
-%   depthBins  - Array of bin boundaries for the IPL (default: [0.3, 0.4, 0.5, 0.6, 0.7])
-%   nRoisIncl  - Max number of ROIs per bin for plotting the envelope (default: 500)
-%   stimSize   - Index or size of stimulus to analyze in roi.resp (default: 1)
+%   DEPTH_BINS  - Array of bin boundaries for the IPL (default: [0.3, 0.4, 0.5, 0.6, 0.7])
+%   MAX_ROIS_PER_BIN  - Max number of ROIs per bin for plotting the envelope (default: 500)
+%   STIM_SIZE   - Index or size of stimulus to analyze in roi.resp (default: 1)
 %
 % DEPENDENCIES:
 %   This script calls several local functions:
@@ -40,54 +40,50 @@
 %       traceEnvelope
 %       plotMeanSemEnvelope
 %       setYlimUsingRange
+%   External functions (in src/ directory):
 %       sem
+%       shadePlot
+%       computeZScores
+%       createNamedFigure
 %
 % Written by: Daniel Kerschensteiner
 % Date: 01/08/2025
+% Updated: 02/15/2025 - Refactored with constants and shared functions
 %}
 
-%% (1) USER-DEFINED INPUTS
-% Adjust these values as needed
-depthBins  = [0.3, 0.4, 0.5, 0.6, 0.7];   % Divides the IPL into bins
-nDepthBins = numel(depthBins);
+%% ========== CONFIGURATION AND CONSTANTS ==========
+
+% Add src directories to path
+addpath(genpath('src'));
+
+% User-defined parameters
+DEPTH_BINS  = [0.3, 0.4, 0.5, 0.6, 0.7];   % Divides the IPL into bins
+nDepthBins = numel(DEPTH_BINS);
 nDepths    = nDepthBins + 1;             % One extra bin above/below the specified bin edges
-nRoisIncl  = 500;                        % We'll only plot up to this many ROIs per bin
-stimSize   = 1;                          % Index for the stimulus size/condition in roi.resp
+MAX_ROIS_PER_BIN  = 500;                 % We'll only plot up to this many ROIs per bin
+STIM_SIZE   = 1;                         % Index for the stimulus size/condition in roi.resp
+
+% Validate data structure
+validateRoiStructure(roi);
 
 % Create approximate labels for each bin (in % depth)
 depthCent = zeros(1, nDepths);
 for i = 1:nDepths
     if i == 1
         % Slightly less than the lower bound
-        depthCent(i) = 100 * (depthBins(1) - 0.01);
+        depthCent(i) = 100 * (DEPTH_BINS(1) - 0.01);
     elseif i == nDepths
         % Slightly more than the upper bound
-        depthCent(i) = 100 * (depthBins(end) + 0.01);
+        depthCent(i) = 100 * (DEPTH_BINS(end) + 0.01);
     else
         % Middle points of bin boundaries
-        depthCent(i) = 100 * ((depthBins(i-1) + depthBins(i)) / 2);
+        depthCent(i) = 100 * ((DEPTH_BINS(i-1) + DEPTH_BINS(i)) / 2);
     end
 end
 
 %% (2) BUILD Z-SCORED RESPONSE
-% The script expects that 'roi.resp' is a 4D array with dimensions:
-%   (ROI x time x stimulusSize x [possibly repeats or some other dimension])
-%   We average across time or repeats as needed and then compute the z-score
-%   relative to each ROI's own baseline and standard deviation.
-
-% Calculate each ROI's standard deviation and mean across the time dimension
-sdResp = squeeze(std(roi.resp(:,:,stimSize,:), 0, [1 2]));
-avSub  = squeeze(mean(roi.resp(:,:,stimSize,:), [1 2]));
-
-% Compute the average response across time for each ROI
-avResp = squeeze(mean(roi.resp(:,:,stimSize,:), 1))';  % [nRois x nTime]
-zResp  = zeros(size(avResp));
-
-% For each ROI, compute the z-scored trace
-nRois = numel(sdResp);
-for r = 1:nRois
-    zResp(r,:) = (avResp(r,:) - avSub(r)) ./ sdResp(r);
-end
+% Use shared function to compute z-scores
+zResp = computeZScores(roi, STIM_SIZE);
 
 %% (3) BIN THE DATA & PICK TOP 50% RELIABLE ROIs
 % We'll store the (up to) nRoisIncl responses for each bin, genotype.
@@ -115,45 +111,45 @@ for i = 1:nDepths
     
     % WT CTRL
     wtCtrlIdx = (roi.id(:,2)==0) & (roi.id(:,3)==0) ...
-                & depthBinMask(roi.id(:,1), i, depthBins);
+                & depthBinMask(roi.id(:,1), i, DEPTH_BINS);
     wtCtrlResp = zResp(wtCtrlIdx, :);
     % Sort by roi.repRel descending; pick top 50%
-    [~, wtCtrlSort] = sort(roi.repRel(wtCtrlIdx, stimSize), 'descend');
+    [~, wtCtrlSort] = sort(roi.repRel(wtCtrlIdx, STIM_SIZE), 'descend');
     wtCtrlSort = wtCtrlSort(1 : round(numel(wtCtrlSort)/2));
     wtCtrl(i).resp = wtCtrlResp(wtCtrlSort, :);
     % Store all repRel, f1Pow values
-    wtCtrlRep(i).vals = roi.repRel(wtCtrlIdx, stimSize);
-    wtCtrlPow(i).vals = roi.f1Pow(wtCtrlIdx, stimSize);
+    wtCtrlRep(i).vals = roi.repRel(wtCtrlIdx, STIM_SIZE);
+    wtCtrlPow(i).vals = roi.f1Pow(wtCtrlIdx, STIM_SIZE);
 
     % WT APb
     wtApbIdx = (roi.id(:,2)==0) & (roi.id(:,3)==1) ...
-               & depthBinMask(roi.id(:,1), i, depthBins);
+               & depthBinMask(roi.id(:,1), i, DEPTH_BINS);
     wtApbResp = zResp(wtApbIdx, :);
-    [~, wtApbSort] = sort(roi.repRel(wtApbIdx, stimSize), 'descend');
+    [~, wtApbSort] = sort(roi.repRel(wtApbIdx, STIM_SIZE), 'descend');
     wtApbSort = wtApbSort(1 : round(numel(wtApbSort)/2));
     wtApb(i).resp = wtApbResp(wtApbSort, :);
-    wtApbRep(i).vals = roi.repRel(wtApbIdx, stimSize);
-    wtApbPow(i).vals = roi.f1Pow(wtApbIdx, stimSize);
+    wtApbRep(i).vals = roi.repRel(wtApbIdx, STIM_SIZE);
+    wtApbPow(i).vals = roi.f1Pow(wtApbIdx, STIM_SIZE);
 
     % KO CTRL
     koCtrlIdx = (roi.id(:,2)==1) & (roi.id(:,3)==0) ...
-                & depthBinMask(roi.id(:,1), i, depthBins);
+                & depthBinMask(roi.id(:,1), i, DEPTH_BINS);
     koCtrlResp = zResp(koCtrlIdx, :);
-    [~, koCtrlSort] = sort(roi.repRel(koCtrlIdx, stimSize), 'descend');
+    [~, koCtrlSort] = sort(roi.repRel(koCtrlIdx, STIM_SIZE), 'descend');
     koCtrlSort = koCtrlSort(1 : round(numel(koCtrlSort)/2));
     koCtrl(i).resp = koCtrlResp(koCtrlSort, :);
-    koCtrlRep(i).vals = roi.repRel(koCtrlIdx, stimSize);
-    koCtrlPow(i).vals = roi.f1Pow(koCtrlIdx, stimSize);
+    koCtrlRep(i).vals = roi.repRel(koCtrlIdx, STIM_SIZE);
+    koCtrlPow(i).vals = roi.f1Pow(koCtrlIdx, STIM_SIZE);
 
     % KO APb
     koApbIdx = (roi.id(:,2)==1) & (roi.id(:,3)==1) ...
-               & depthBinMask(roi.id(:,1), i, depthBins);
+               & depthBinMask(roi.id(:,1), i, DEPTH_BINS);
     koApbResp = zResp(koApbIdx, :);
-    [~, koApbSort] = sort(roi.repRel(koApbIdx, stimSize), 'descend');
+    [~, koApbSort] = sort(roi.repRel(koApbIdx, STIM_SIZE), 'descend');
     koApbSort = koApbSort(1 : round(numel(koApbSort)/2));
     koApb(i).resp = koApbResp(koApbSort, :);
-    koApbRep(i).vals = roi.repRel(koApbIdx, stimSize);
-    koApbPow(i).vals = roi.f1Pow(koApbIdx, stimSize);
+    koApbRep(i).vals = roi.repRel(koApbIdx, STIM_SIZE);
+    koApbPow(i).vals = roi.f1Pow(koApbIdx, STIM_SIZE);
 end
 
 %% (4) COMPUTE THE MEAN +/- SEM ENVELOPE FOR EACH BIN
@@ -168,10 +164,10 @@ koApbEnv  = wtCtrlEnv;
 
 % Populate the structures using our local function 'traceEnvelope'
 for i = 1:nDepths
-    wtCtrlEnv(i) = traceEnvelope(wtCtrl(i).resp, nRoisIncl);
-    wtApbEnv(i)  = traceEnvelope(wtApb(i).resp, nRoisIncl);
-    koCtrlEnv(i) = traceEnvelope(koCtrl(i).resp, nRoisIncl);
-    koApbEnv(i)  = traceEnvelope(koApb(i).resp, nRoisIncl);
+    wtCtrlEnv(i) = traceEnvelope(wtCtrl(i).resp, MAX_ROIS_PER_BIN);
+    wtApbEnv(i)  = traceEnvelope(wtApb(i).resp, MAX_ROIS_PER_BIN);
+    koCtrlEnv(i) = traceEnvelope(koCtrl(i).resp, MAX_ROIS_PER_BIN);
+    koApbEnv(i)  = traceEnvelope(koApb(i).resp, MAX_ROIS_PER_BIN);
 end
 
 %% (5) DETERMINE A "GLOBAL" Y-RANGE FROM LOCAL RANGES
@@ -188,7 +184,7 @@ globalRange = max(allRanges);
 %% (6) PLOT EACH BIN WITH THE SAME TOTAL Y-RANGE (FIGURE 1)
 % Layout: nDepths rows x 4 columns (WT Ctrl, WT APb, KO Ctrl, KO APb)
 
-figure(1);  clf
+hFig1 = createNamedFigure('Mean ± SEM Envelopes by Depth Bin', 1);
 nRows = nDepths;  
 nCols = 4;
 
@@ -227,7 +223,7 @@ end
 %   - Layout is the same: nDepths rows, 4 columns
 %   - 'Normalization' = 'probability' so that areas sum to 1
 
-figure(2); clf
+hFig2 = createNamedFigure('Reliability Histograms by Depth', 2);
 binEdgesRepRel = -1:0.02:1;
 nRows = nDepths;  
 nCols = 4;
@@ -271,7 +267,7 @@ end
 %   - Same layout as above: nDepths rows x 4 columns
 %   - 'Normalization' = 'probability'
 
-figure(3); clf
+hFig3 = createNamedFigure('Fundamental Power Histograms by Depth', 3);
 binEdgesF1Pow = 0:0.02:0.6;
 nRows = nDepths;  
 nCols = 4;
@@ -416,18 +412,4 @@ if isempty(env.meanTrace), return; end
 halfG = globalRange / 2;
 yCenter = env.center;
 ylim([yCenter - halfG,  yCenter + halfG])
-end
-
-function val = sem(mat, dim)
-% sem  Computes the standard error of the mean along dimension 'dim'.
-%
-% Inputs:
-%   mat - Data matrix
-%   dim - Dimension along which to compute SEM (default = 1)
-%
-% Output:
-%   val - SEM of the data along the specified dimension
-
-if nargin < 2, dim = 1; end
-val = std(mat, 0, dim) ./ sqrt(size(mat, dim));
 end
