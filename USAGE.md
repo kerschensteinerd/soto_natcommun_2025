@@ -16,7 +16,7 @@ This document provides detailed examples and workflows for using the iGluSnFR IP
 
 ```matlab
 % Start MATLAB in the repository directory
-cd /path/to/soto_natcommun_2025
+cd /path/to/Soto2025_lrfn2-off-pathway
 
 % Load the data file
 load('iGluSnFR_IPL.mat')
