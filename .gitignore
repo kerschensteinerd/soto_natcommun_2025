@@ -1,0 +1,39 @@
+# MATLAB temporary files
+*.asv
+*.autosave
+
+# MATLAB compiled files
+*.mex*
+*.p
+
+# Data files (large binary files)
+*.mat
+
+# Figure outputs
+*.fig
+*.png
+*.jpg
+*.jpeg
+*.pdf
+*.eps
+*.tif
+*.tiff
+
+# Output directories
+output/
+figures/
+results/
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Editor backup files
+*~
+*.swp
+*.swo
